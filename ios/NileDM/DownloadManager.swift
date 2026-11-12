@@ -373,7 +373,6 @@ final class DownloadManager: NSObject, ObservableObject {
         case NSURLErrorTimedOut: return "السيرفر مبيردش — جرّب تاني"
         case NSURLErrorNetworkConnectionLost: return "الاتصال اتقطع — دوس استكمال"
         case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost: return "مش قادر أوصل للموقع"
-        case NSURLErrorCannotResumeDownload: return "السيرفر مش بيدعم الاستكمال — دوس إعادة"
         default: return ns.localizedDescription
         }
     }
