@@ -1,0 +1,70 @@
+name: Simulator check (screenshots)
+
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/smoke.yml", "ios/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$XC"; xcodebuild -version
+      - run: brew install xcodegen
+      - name: Build for the iPhone simulator
+        working-directory: ios
+        run: |
+          xcodegen generate
+          xcodebuild -project NileDM.xcodeproj -scheme NileDM -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build > sim.log 2>&1 \
+            || { grep -E "error:" sim.log | sort -u | head -50; tail -40 sim.log; exit 1; }
+      - name: Run it on a simulated iPhone and take screenshots
+        working-directory: ios
+        run: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          c=[x for k,v in d.items() if "iOS" in k for x in v if x["name"].startswith("iPhone") and "Pro Max" in x["name"]] or [x for k,v in d.items() if "iOS" in k for x in v if x["name"].startswith("iPhone")]
+          print(c[-1]["udid"])')
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl spawn "$UDID" defaults write -g AppleLanguages -array ar
+          xcrun simctl spawn "$UDID" defaults write -g AppleLocale ar_EG
+          xcrun simctl shutdown "$UDID"; xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryLevel 100 --cellularBars 4 || true
+          APP=build/Build/Products/Debug-iphonesimulator/NileDM.app
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl privacy "$UDID" grant photos-add eg.niledm.browser || true
+          mkdir -p shots
+          xcrun simctl launch "$UDID" eg.niledm.browser
+          sleep 25
+          xcrun simctl io "$UDID" screenshot shots/1-browser.png
+          xcrun simctl terminate "$UDID" eg.niledm.browser
+          xcrun simctl launch "$UDID" eg.niledm.browser -NDMSelfTest "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+          sleep 4
+          xcrun simctl io "$UDID" screenshot shots/2-downloading.png
+          sleep 30
+          xcrun simctl io "$UDID" screenshot shots/3-downloaded.png
+          # is the file really in Documents/Downloads?
+          DATA=$(xcrun simctl get_app_container "$UDID" eg.niledm.browser data)
+          ls -la "$DATA/Documents/Downloads" | tee shots/files.txt
+          cat "$DATA/Library/Application Support/NileDM/downloads.json" | head -c 2000 > shots/downloads.json || true
+          xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "NileDM"' --style compact 2>/dev/null | grep -iE "error|crash|fault" | tail -40 > shots/log.txt || true
+      - name: Publish screenshots
+        if: always()
+        working-directory: ios
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls shots || exit 0
+          gh release view smoke-test >/dev/null 2>&1 || gh release create smoke-test --title "Simulator check" --notes "Automatic screenshots from the iPhone simulator" --prerelease
+          gh release upload smoke-test shots/* --clobber

@@ -32,5 +32,14 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: toast.message)
+        .onAppear(perform: runSelfTestIfAsked)
+    }
+
+    /// Used only by the automated check on GitHub: `-NDMSelfTest <url>` starts a download and opens the list.
+    private func runSelfTestIfAsked() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-NDMSelfTest"), i + 1 < args.count, let url = URL(string: args[i + 1]) else { return }
+        selection = 1
+        DownloadManager.shared.add(url: url, pageURL: nil, nameHint: nil, headers: [:])
     }
 }

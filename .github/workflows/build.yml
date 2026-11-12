@@ -3,6 +3,7 @@ name: Build iPhone app (IPA)
 on:
   push:
     branches: [main]
+    paths-ignore: [".github/workflows/smoke.yml"]
   workflow_dispatch:
 
 permissions:
