@@ -25,7 +25,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         _ = DownloadManager.shared // recreate background sessions right away so iOS can deliver events
-        Notifier.requestAuthorization()
+        if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-NDM") }) {
+            Notifier.requestAuthorization() // (skipped only in the automated simulator check)
+        }
         Provision.scheduleReminder()
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         return true

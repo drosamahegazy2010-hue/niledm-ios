@@ -54,6 +54,7 @@ struct BrowserTabView: View {
             toolbar
         }
         .sheet(isPresented: $showMedia) { MediaSheet(tab: tab, quality: quality) }
+        .onReceive(NotificationCenter.default.publisher(for: .init("NDMShowMedia"))) { _ in showMedia = true }
         .sheet(isPresented: $showTabs) { TabsSheet() }
     }
 

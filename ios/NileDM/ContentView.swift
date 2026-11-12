@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var downloads: DownloadManager
     @EnvironmentObject var toast: Toast
+    @EnvironmentObject var tabs: TabsModel
     @State private var selection = 0
 
     var body: some View {
@@ -40,6 +41,14 @@ struct ContentView: View {
     private func runSelfTestIfAsked() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-NDMShowDownloads") { selection = 1 }
+        if let i = args.firstIndex(of: "-NDMOpen"), i + 1 < args.count {
+            tabs.current.open(args[i + 1])
+            if args.contains("-NDMShowMedia") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                    NotificationCenter.default.post(name: .init("NDMShowMedia"), object: nil)
+                }
+            }
+        }
         guard let i = args.firstIndex(of: "-NDMSelfTest") else { return }
         selection = 1
         for a in args[(i + 1)...] where a.hasPrefix("http") {

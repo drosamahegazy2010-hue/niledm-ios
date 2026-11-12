@@ -44,31 +44,67 @@ jobs:
           APP=build/Build/Products/Debug-iphonesimulator/NileDM.app
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl privacy "$UDID" grant photos-add eg.niledm.browser || true
-          mkdir -p shots
-          BIG="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          mkdir -p shots www
+          # test page with two videos (mp4 + HLS stream), and a file that downloads slowly (~70 s)
+          cat > www/video.html <<'HTML'
+          <!doctype html><html><head><meta name="viewport" content="width=device-width"><title>NileDM video test</title></head>
+          <body style="font-family:-apple-system"><h2>Video test</h2>
+          <video src="https://www.w3schools.com/html/mov_bbb.mp4" controls playsinline width="300"></video>
+          <video src="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8" controls playsinline width="300"></video>
+          </body></html>
+          HTML
+          cat > slow.py <<'PY'
+          import http.server, time, sys
+          SIZE = 24 * 1024 * 1024
+          class H(http.server.SimpleHTTPRequestHandler):
+              def __init__(self, *a, **k): super().__init__(*a, directory="www", **k)
+              def do_GET(self):
+                  if not self.path.startswith("/slow.bin"): return super().do_GET()
+                  self.send_response(200)
+                  self.send_header("Content-Type", "application/octet-stream")
+                  self.send_header("Content-Length", str(SIZE))
+                  self.end_headers()
+                  chunk = b"N" * (64 * 1024); sent = 0; start = time.time()
+                  while sent < SIZE:
+                      self.wfile.write(chunk); sent += len(chunk)
+                      if sent % (2 * 1024 * 1024) == 0:
+                          print(f"slow.bin {sent >> 20} MB at +{time.time() - start:.0f}s", flush=True)
+                      time.sleep(0.18)
+          http.server.ThreadingHTTPServer(("127.0.0.1", 8765), H).serve_forever()
+          PY
+          python3 slow.py > shots/server.txt 2>&1 &
+          sleep 2
+          PAGE="http://127.0.0.1:8765/video.html"
+          SLOW="http://127.0.0.1:8765/slow.bin"
           SMALL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-          xcrun simctl launch "$UDID" eg.niledm.browser
-          sleep 25
-          xcrun simctl io "$UDID" screenshot shots/1-browser.png
+
+          xcrun simctl launch "$UDID" eg.niledm.browser -NDMOpen "$PAGE"
+          sleep 20
+          xcrun simctl io "$UDID" screenshot shots/1-video-page.png
           xcrun simctl terminate "$UDID" eg.niledm.browser
-          xcrun simctl launch "$UDID" eg.niledm.browser -NDMSelfTest "$SMALL" "$BIG"
-          sleep 3
-          xcrun simctl io "$UDID" screenshot shots/2-downloading.png
-          # leave the app (it goes to the background) while the big file is still downloading
+          xcrun simctl launch "$UDID" eg.niledm.browser -NDMOpen "$PAGE" -NDMShowMedia
+          sleep 22
+          xcrun simctl io "$UDID" screenshot shots/2-video-list.png
+          xcrun simctl terminate "$UDID" eg.niledm.browser
+
+          xcrun simctl launch "$UDID" eg.niledm.browser -NDMSelfTest "$SMALL" "$SLOW"
+          sleep 6
+          xcrun simctl io "$UDID" screenshot shots/3-downloading.png
+          echo "=== app sent to background at $(date +%T)" >> shots/server.txt
           xcrun simctl launch "$UDID" com.apple.Preferences
-          sleep 3
-          xcrun simctl io "$UDID" screenshot shots/3-app-in-background.png
-          sleep 60
+          sleep 85
+          echo "=== app opened again at $(date +%T)" >> shots/server.txt
           xcrun simctl launch "$UDID" eg.niledm.browser -NDMShowDownloads
           sleep 5
-          xcrun simctl io "$UDID" screenshot shots/4-back-in-app.png
+          xcrun simctl io "$UDID" screenshot shots/4-after-background.png
           DATA=$(xcrun simctl get_app_container "$UDID" eg.niledm.browser data)
-          { ls -la "$DATA/Documents/Downloads" 2>&1; echo; find "$DATA/Library/Caches" -type f -size +1M 2>/dev/null | head; } > shots/files.txt
+          ls -la "$DATA/Documents/Downloads" > shots/files.txt 2>&1 || true
           cp "$DATA/Library/Application Support/NileDM/downloads.json" shots/downloads.json || true
-          xcrun simctl spawn "$UDID" log show --last 5m --style compact \
-            --predicate 'process == "NileDM" OR process == "nsurlsessiond"' 2>/dev/null \
-            | grep -E "NileDM|rror" | tail -150 > shots/log.txt || true
-          cat shots/files.txt shots/downloads.json; echo; tail -60 shots/log.txt
+          xcrun simctl spawn "$UDID" log show --last 10m --style compact \
+            --predicate 'process == "NileDM" OR process == "nsurlsessiond"' 2>/dev/null > all.log || true
+          grep -E "NileDM:" all.log > shots/log.txt || true
+          grep -iE "slow.bin|127.0.0.1:8765" all.log | tail -60 >> shots/log.txt || true
+          cat shots/server.txt shots/files.txt shots/log.txt
       - name: Publish screenshots
         if: always()
         working-directory: ios
