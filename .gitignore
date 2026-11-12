@@ -1,0 +1,6 @@
+ios/build/
+ios/NileDM.xcodeproj/
+ios/NileDM/Info.plist
+ios/Payload/
+*.ipa
+.DS_Store

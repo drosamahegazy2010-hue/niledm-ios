@@ -1,0 +1,68 @@
+name: Build iPhone app (IPA)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          echo "Using $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build (unsigned — Sideloadly signs it with your Apple ID)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project NileDM.xcodeproj -scheme NileDM -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || {
+              echo "::group::errors"
+              grep -E "error:|error :" build.log | sort -u | head -80
+              echo "::endgroup::"
+              tail -60 build.log
+              exit 1
+            }
+          grep -E "warning:" build.log | sort -u | head -40 || true
+
+      - name: Package IPA
+        working-directory: ios
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/NileDM.app Payload/
+          zip -qry NileDM.ipa Payload
+          ls -la NileDM.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NileDM-ipa
+          path: ios/NileDM.ipa
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0-build${{ github.run_number }}"
+          gh release create "$TAG" ios/NileDM.ipa --title "NileDM للآيفون ($TAG)" \
+            --notes "نزّل NileDM.ipa وركّبه على الآيفون ببرنامج Sideloadly." --latest
