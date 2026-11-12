@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [macos-15-intel]   # Apple-silicon runners are short on capacity
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:

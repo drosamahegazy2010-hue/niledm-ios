@@ -36,6 +36,15 @@ struct ContentView: View {
         .onAppear(perform: runSelfTestIfAsked)
     }
 
+    private func showMediaWhenFound(tries: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            if tabs.current.visibleMedia.isEmpty && tries > 0 { return showMediaWhenFound(tries: tries - 1) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { // let the stream qualities load
+                NotificationCenter.default.post(name: .init("NDMShowMedia"), object: nil)
+            }
+        }
+    }
+
     /// Used only by the automated check on GitHub:
     /// `-NDMSelfTest <url>...` starts downloads and opens the list, `-NDMShowDownloads` just opens the list.
     private func runSelfTestIfAsked() {
@@ -43,11 +52,7 @@ struct ContentView: View {
         if args.contains("-NDMShowDownloads") { selection = 1 }
         if let i = args.firstIndex(of: "-NDMOpen"), i + 1 < args.count {
             tabs.current.open(args[i + 1])
-            if args.contains("-NDMShowMedia") {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                    NotificationCenter.default.post(name: .init("NDMShowMedia"), object: nil)
-                }
-            }
+            if args.contains("-NDMShowMedia") { showMediaWhenFound(tries: 90) }
         }
         guard let i = args.firstIndex(of: "-NDMSelfTest") else { return }
         selection = 1
