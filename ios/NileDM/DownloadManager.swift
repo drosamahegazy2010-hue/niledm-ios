@@ -10,6 +10,7 @@ final class DownloadManager: NSObject, ObservableObject {
     static let shared = DownloadManager()
     static let fileSessionID = "com.niledm.browser.files"
     static let hlsSessionID = "com.niledm.browser.hls"
+    static let fgSessionID = "fg"   // ordinary session, only used if the background service refuses a download
 
     @Published private(set) var items: [DownloadItem] = []
 
@@ -24,6 +25,8 @@ final class DownloadManager: NSObject, ObservableObject {
     private let saveQueue = DispatchQueue(label: "niledm.save")
     private var fileSession: URLSession!
     private var hlsSession: AVAssetDownloadURLSession!
+    private var fgSession: URLSession!
+    private var fallbackTried = Set<String>()       // item ids already retried on the ordinary session
     private var backgroundHandlers: [String: () -> Void] = [:]
     private var cancelledTasks = Set<String>()       // "<session>#<taskIdentifier>" we cancelled on purpose
     private var speedSamples: [String: (bytes: Int64, time: Date)] = [:]
@@ -46,6 +49,10 @@ final class DownloadManager: NSObject, ObservableObject {
         hc.isDiscretionary = false
         hc.allowsCellularAccess = true
         hlsSession = AVAssetDownloadURLSession(configuration: hc, assetDownloadDelegate: self, delegateQueue: delegateQueue)
+
+        let gc = URLSessionConfiguration.default
+        gc.httpMaximumConnectionsPerHost = 6
+        fgSession = URLSession(configuration: gc, delegate: self, delegateQueue: delegateQueue)
 
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                                object: nil, queue: .main) { [weak self] _ in self?.saveNow() }
@@ -94,12 +101,14 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let it = item(id), it.state == .downloading else { return }
         mutate(id, now: true) { $0.state = .paused; $0.speed = 0; $0.eta = 0 }
         if it.kind == .file {
-            fileSession.getAllTasks { tasks in
-                for case let t as URLSessionDownloadTask in tasks where t.taskDescription == id {
-                    self.markCancelled(t, in: Self.fileSessionID)
-                    t.cancel(byProducingResumeData: { data in
-                        if let data { try? data.write(to: self.resumeURL(id), options: .atomic) }
-                    })
+            for (session, sid) in [(fileSession!, Self.fileSessionID), (fgSession!, Self.fgSessionID)] {
+                session.getAllTasks { tasks in
+                    for case let t as URLSessionDownloadTask in tasks where t.taskDescription == id {
+                        self.markCancelled(t, in: sid)
+                        t.cancel(byProducingResumeData: { data in
+                            if let data { try? data.write(to: self.resumeURL(id), options: .atomic) }
+                        })
+                    }
                 }
             }
         } else {
@@ -139,6 +148,7 @@ final class DownloadManager: NSObject, ObservableObject {
             }
         }
         fileSession.getAllTasks(completionHandler: cancel(Self.fileSessionID))
+        fgSession.getAllTasks(completionHandler: cancel(Self.fgSessionID))
         hlsSession.getAllTasks(completionHandler: cancel(Self.hlsSessionID))
         lock.lock()
         store.removeAll { $0.id == id }
@@ -180,11 +190,12 @@ final class DownloadManager: NSObject, ObservableObject {
 
     // MARK: Engines
 
-    private func startFileTask(_ item: DownloadItem) {
+    private func startFileTask(_ item: DownloadItem, ordinary: Bool = false) {
+        let session: URLSession = ordinary ? fgSession : fileSession
         let task: URLSessionDownloadTask
         let rURL = resumeURL(item.id)
         if let data = try? Data(contentsOf: rURL) {
-            task = fileSession.downloadTask(withResumeData: data)
+            task = session.downloadTask(withResumeData: data)
             try? FileManager.default.removeItem(at: rURL)
         } else {
             guard let url = URL(string: item.url) else {
@@ -193,7 +204,7 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             var req = URLRequest(url: url)
             for (k, v) in item.headers { req.setValue(v, forHTTPHeaderField: k) }
-            task = fileSession.downloadTask(with: req)
+            task = session.downloadTask(with: req)
         }
         task.taskDescription = item.id
         task.resume()
@@ -373,7 +384,9 @@ final class DownloadManager: NSObject, ObservableObject {
         case NSURLErrorTimedOut: return "السيرفر مبيردش — جرّب تاني"
         case NSURLErrorNetworkConnectionLost: return "الاتصال اتقطع — دوس استكمال"
         case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost: return "مش قادر أوصل للموقع"
-        default: return ns.localizedDescription
+        default:
+            let under = (ns.userInfo[NSUnderlyingErrorKey] as? NSError).map { " / \($0.code)" } ?? ""
+            return "\(ns.localizedDescription) [\(ns.code)\(under)]"
         }
     }
 
@@ -424,7 +437,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     /// After a relaunch: find downloads whose task no longer exists and fix their state.
     private func reconcile() {
-        let sessions: [URLSession] = [fileSession, hlsSession]
+        let sessions: [URLSession] = [fileSession, fgSession, hlsSession]
         let group = DispatchGroup()
         let liveLock = NSLock()
         var live = Set<String>()
@@ -518,8 +531,9 @@ extension DownloadManager: URLSessionDownloadDelegate, AVAssetDownloadDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let id = task.taskDescription else { return }
-        let sid = session.configuration.identifier ?? ""
+        let sid = session.configuration.identifier ?? Self.fgSessionID
         speedSamples[id] = nil
+        if let error { NSLog("NileDM: task %@ in %@ ended with %@", id, sid, error as NSError) }
         if wasCancelledByUs(task, in: sid) { return }
 
         if sid == Self.hlsSessionID {
@@ -541,6 +555,18 @@ extension DownloadManager: URLSessionDownloadDelegate, AVAssetDownloadDelegate {
 
         guard let error else { return } // success is handled in didFinishDownloadingTo
         let ns = error as NSError
+        // The iOS download service sometimes refuses a task outright (seen as "unknown error").
+        // Retry once on an ordinary session instead of failing — it keeps going while the app is open.
+        let refused: Set<Int> = [NSURLErrorUnknown, NSURLErrorBackgroundSessionWasDisconnected,
+                                 NSURLErrorBackgroundSessionInUseByAnotherProcess,
+                                 NSURLErrorBackgroundSessionRequiresSharedContainer]
+        if sid == Self.fileSessionID, ns.domain == NSURLErrorDomain, refused.contains(ns.code),
+           !fallbackTried.contains(id), let it = item(id), it.received == 0, it.state == .downloading {
+            fallbackTried.insert(id)
+            NSLog("NileDM: background service refused %@, retrying on ordinary session", id)
+            DispatchQueue.main.async { self.startFileTask(it, ordinary: true) }
+            return
+        }
         if let data = ns.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
             try? data.write(to: resumeURL(id), options: .atomic)
         }

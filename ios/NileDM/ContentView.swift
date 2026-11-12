@@ -35,11 +35,15 @@ struct ContentView: View {
         .onAppear(perform: runSelfTestIfAsked)
     }
 
-    /// Used only by the automated check on GitHub: `-NDMSelfTest <url>` starts a download and opens the list.
+    /// Used only by the automated check on GitHub:
+    /// `-NDMSelfTest <url>...` starts downloads and opens the list, `-NDMShowDownloads` just opens the list.
     private func runSelfTestIfAsked() {
         let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-NDMSelfTest"), i + 1 < args.count, let url = URL(string: args[i + 1]) else { return }
+        if args.contains("-NDMShowDownloads") { selection = 1 }
+        guard let i = args.firstIndex(of: "-NDMSelfTest") else { return }
         selection = 1
-        DownloadManager.shared.add(url: url, pageURL: nil, nameHint: nil, headers: [:])
+        for a in args[(i + 1)...] where a.hasPrefix("http") {
+            if let url = URL(string: a) { DownloadManager.shared.add(url: url, pageURL: nil, nameHint: nil, headers: [:]) }
+        }
     }
 }
