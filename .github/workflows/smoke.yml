@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: macos-latest
-    timeout-minutes: 40
+    runs-on: macos-15-intel   # Apple-silicon runners are short on capacity today
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - name: Xcode
