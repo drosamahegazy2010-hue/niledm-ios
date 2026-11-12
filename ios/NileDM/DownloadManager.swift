@@ -533,7 +533,10 @@ extension DownloadManager: URLSessionDownloadDelegate, AVAssetDownloadDelegate {
         guard let id = task.taskDescription else { return }
         let sid = session.configuration.identifier ?? Self.fgSessionID
         speedSamples[id] = nil
-        if let error { NSLog("NileDM: task %@ in %@ ended with %@", id, sid, error as NSError) }
+        if let error {
+            NSLog("NileDM: task %@ in %@ ended with %@", id, sid,
+                  String(describing: error).replacingOccurrences(of: "\n", with: " "))
+        }
         if wasCancelledByUs(task, in: sid) { return }
 
         if sid == Self.hlsSessionID {

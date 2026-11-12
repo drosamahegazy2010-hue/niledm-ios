@@ -24,7 +24,7 @@ jobs:
         run: |
           xcodegen generate
           xcodebuild -project NileDM.xcodeproj -scheme NileDM -configuration Debug -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build > sim.log 2>&1 \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO build > sim.log 2>&1 \
             || { grep -E "error:" sim.log | sort -u | head -50; tail -40 sim.log; exit 1; }
       - name: Run it on a simulated iPhone and take screenshots
         working-directory: ios
@@ -72,28 +72,30 @@ jobs:
                       time.sleep(0.18)
           http.server.ThreadingHTTPServer(("127.0.0.1", 8765), H).serve_forever()
           PY
+          echo "server start $(date +%T)" > shots/events.txt
           python3 slow.py > shots/server.txt 2>&1 &
+          codesign -dv build/Build/Products/Debug-iphonesimulator/NileDM.app 2>&1 | tee shots/codesign.txt || true
           sleep 2
           PAGE="http://127.0.0.1:8765/video.html"
           SLOW="http://127.0.0.1:8765/slow.bin"
           SMALL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 
           xcrun simctl launch "$UDID" eg.niledm.browser -NDMOpen "$PAGE"
-          sleep 20
+          sleep 45
           xcrun simctl io "$UDID" screenshot shots/1-video-page.png
           xcrun simctl terminate "$UDID" eg.niledm.browser
           xcrun simctl launch "$UDID" eg.niledm.browser -NDMOpen "$PAGE" -NDMShowMedia
-          sleep 22
+          sleep 30
           xcrun simctl io "$UDID" screenshot shots/2-video-list.png
           xcrun simctl terminate "$UDID" eg.niledm.browser
 
           xcrun simctl launch "$UDID" eg.niledm.browser -NDMSelfTest "$SMALL" "$SLOW"
           sleep 6
           xcrun simctl io "$UDID" screenshot shots/3-downloading.png
-          echo "=== app sent to background at $(date +%T)" >> shots/server.txt
+          echo "app sent to background at $(date +%T)" >> shots/events.txt
           xcrun simctl launch "$UDID" com.apple.Preferences
           sleep 85
-          echo "=== app opened again at $(date +%T)" >> shots/server.txt
+          echo "app opened again at $(date +%T)" >> shots/events.txt
           xcrun simctl launch "$UDID" eg.niledm.browser -NDMShowDownloads
           sleep 5
           xcrun simctl io "$UDID" screenshot shots/4-after-background.png
@@ -102,9 +104,9 @@ jobs:
           cp "$DATA/Library/Application Support/NileDM/downloads.json" shots/downloads.json || true
           xcrun simctl spawn "$UDID" log show --last 10m --style compact \
             --predicate 'process == "NileDM" OR process == "nsurlsessiond"' 2>/dev/null > all.log || true
-          grep -E "NileDM:" all.log > shots/log.txt || true
+          grep -E "NileDM:" all.log | cut -c1-600 > shots/log.txt || true
           grep -iE "slow.bin|127.0.0.1:8765" all.log | tail -60 >> shots/log.txt || true
-          cat shots/server.txt shots/files.txt shots/log.txt
+          cat shots/events.txt shots/server.txt shots/files.txt shots/log.txt
       - name: Publish screenshots
         if: always()
         working-directory: ios

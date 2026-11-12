@@ -214,6 +214,7 @@ extension BrowserTab: WKScriptMessageHandler {
               let url = body["url"] as? String else { return }
         let tag = body["tag"] as? String ?? ""
         let title = body["title"] as? String ?? ""
+        NSLog("NileDM: page reported media %@ (%@)", url, tag)
         found(urlString: url, tag: tag, pageTitle: title)
     }
 }
@@ -271,6 +272,7 @@ extension BrowserTab: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        NSLog("NileDM: page loaded %@", webView.url?.absoluteString ?? "-")
         if BrowserTab.userAgent == nil {
             webView.evaluateJavaScript("navigator.userAgent") { result, _ in
                 if let ua = result as? String { BrowserTab.userAgent = ua }
@@ -280,6 +282,7 @@ extension BrowserTab: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let ns = error as NSError
+        NSLog("NileDM: page failed %@ %ld", ns.domain, ns.code)
         if ns.code == NSURLErrorCancelled || ns.code == 102 { return } // 102 = frame load interrupted (download)
         Toast.shared.show("مش قادر أفتح الصفحة: \(ns.localizedDescription)")
     }
