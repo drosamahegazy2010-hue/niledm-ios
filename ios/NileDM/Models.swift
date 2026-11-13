@@ -75,10 +75,10 @@ struct MediaItem: Identifiable, Equatable {
         switch kind {
         case .hls: return "HLS"
         case .dash: return "DASH"
-        case .audio: return "صوت"
+        case .audio: return tr("صوت", "Audio")
         case .video:
             let e = url.pathExtension.uppercased()
-            return e.isEmpty ? "فيديو" : String(e.prefix(4))
+            return e.isEmpty ? tr("فيديو", "Video") : String(e.prefix(4))
         }
     }
 

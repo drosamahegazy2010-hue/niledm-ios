@@ -81,20 +81,20 @@ final class DownloadManager: NSObject, ObservableObject {
                                 state: .downloading, created: Date(), headers: headers)
         insert(item)
         startFileTask(item)
-        Toast.shared.show("بدأ التحميل ⬇")
+        Toast.shared.show(tr("بدأ التحميل ⬇", "Download started ⬇"))
     }
 
     func addHLS(url: URL, pageURL: URL?, title: String, bitrate: Double?, headers: [String: String]) {
         var clean = FileNames.sanitize(title)
         if clean.lowercased() == "index" || clean.lowercased() == "master" || clean.lowercased() == "playlist" {
-            clean = "فيديو " + Fmt.date(Date())
+            clean = tr("فيديو ", "Video ") + Fmt.date(Date())
         }
         let item = DownloadItem(id: UUID().uuidString, kind: .hls, url: url.absoluteString,
                                 pageURL: pageURL?.absoluteString, title: clean, nameHint: nil,
                                 state: .downloading, created: Date(), headers: headers, bitrate: bitrate)
         insert(item)
         startHLSTask(item)
-        Toast.shared.show("بدأ تحميل الفيديو ⬇")
+        Toast.shared.show(tr("بدأ تحميل الفيديو ⬇", "Video download started ⬇"))
     }
 
     func pause(_ id: String) {
@@ -199,7 +199,7 @@ final class DownloadManager: NSObject, ObservableObject {
             try? FileManager.default.removeItem(at: rURL)
         } else {
             guard let url = URL(string: item.url) else {
-                fail(item.id, "الرابط مش صحيح")
+                fail(item.id, tr("الرابط مش صحيح", "Invalid link"))
                 return
             }
             var req = URLRequest(url: url)
@@ -212,7 +212,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private func startHLSTask(_ item: DownloadItem) {
         guard let url = URL(string: item.url) else {
-            fail(item.id, "الرابط مش صحيح")
+            fail(item.id, tr("الرابط مش صحيح", "Invalid link"))
             return
         }
         var assetOptions: [String: Any] = [:]
@@ -224,7 +224,7 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         guard let task = hlsSession.makeAssetDownloadTask(asset: asset, assetTitle: item.title,
                                                           assetArtworkData: nil, options: taskOptions) else {
-            fail(item.id, "مقدرتش أبدأ تحميل الفيديو")
+            fail(item.id, tr("مقدرتش أبدأ تحميل الفيديو", "Couldn't start the video download"))
             return
         }
         task.taskDescription = item.id
@@ -234,7 +234,7 @@ final class DownloadManager: NSObject, ObservableObject {
     /// Turns the offline HLS package into a normal MP4 (playable anywhere, can go to Photos).
     private func exportMP4(_ id: String) {
         guard let it = item(id), let rel = it.assetPath else {
-            fail(id, "ملف الفيديو مش موجود")
+            fail(id, tr("ملف الفيديو مش موجود", "The video file is missing"))
             return
         }
         let source = Paths.fromHome(rel)
@@ -267,7 +267,7 @@ final class DownloadManager: NSObject, ObservableObject {
                         x.state = .completed
                         x.finished = Date()
                         x.progress = 1
-                        x.error = "اتحفظ للمشاهدة جوه البرنامج بس (مقدرتش أحوّله MP4)"
+                        x.error = tr("اتحفظ للمشاهدة جوه البرنامج بس (مقدرتش أحوّله MP4)", "Saved for watching inside the app only (couldn't convert it to MP4)")
                     }
                 }
                 self.notifyDone(it.title)
@@ -331,7 +331,7 @@ final class DownloadManager: NSObject, ObservableObject {
         let title = item(id)?.title ?? ""
         DispatchQueue.main.async {
             if UIApplication.shared.applicationState != .active {
-                Notifier.post(title: "التحميل وقف", body: "\(title)\n\(message)")
+                Notifier.post(title: tr("التحميل وقف", "Download stopped"), body: "\(title)\n\(message)")
             }
         }
     }
@@ -339,9 +339,9 @@ final class DownloadManager: NSObject, ObservableObject {
     private func notifyDone(_ name: String) {
         DispatchQueue.main.async {
             if UIApplication.shared.applicationState != .active {
-                Notifier.post(title: "اكتمل التحميل ✔", body: name)
+                Notifier.post(title: tr("اكتمل التحميل ✔", "Download complete ✔"), body: name)
             } else {
-                Toast.shared.show("اكتمل: \(name)")
+                Toast.shared.show(tr("اكتمل: \(name)", "Done: \(name)"))
             }
         }
     }
@@ -380,10 +380,10 @@ final class DownloadManager: NSObject, ObservableObject {
     private func friendly(_ error: Error) -> String {
         let ns = error as NSError
         switch ns.code {
-        case NSURLErrorNotConnectedToInternet: return "مفيش إنترنت — دوس استكمال لما النت يرجع"
-        case NSURLErrorTimedOut: return "السيرفر مبيردش — جرّب تاني"
-        case NSURLErrorNetworkConnectionLost: return "الاتصال اتقطع — دوس استكمال"
-        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost: return "مش قادر أوصل للموقع"
+        case NSURLErrorNotConnectedToInternet: return tr("مفيش إنترنت — دوس استكمال لما النت يرجع", "No internet — tap Resume when you're back online")
+        case NSURLErrorTimedOut: return tr("السيرفر مبيردش — جرّب تاني", "The server isn't responding — try again")
+        case NSURLErrorNetworkConnectionLost: return tr("الاتصال اتقطع — دوس استكمال", "Connection lost — tap Resume")
+        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost: return tr("مش قادر أوصل للموقع", "Can't reach the site")
         default:
             let under = (ns.userInfo[NSUnderlyingErrorKey] as? NSError).map { " / \($0.code)" } ?? ""
             return "\(ns.localizedDescription) [\(ns.code)\(under)]"
@@ -464,9 +464,9 @@ final class DownloadManager: NSObject, ObservableObject {
                     self.mutate(it.id, now: true) { $0.state = .processing }
                     self.exportMP4(it.id)
                 } else if it.kind == .file, FileManager.default.fileExists(atPath: self.resumeURL(it.id).path) {
-                    self.mutate(it.id, now: true) { $0.state = .paused; $0.error = "اتوقف — دوس استكمال" }
+                    self.mutate(it.id, now: true) { $0.state = .paused; $0.error = tr("اتوقف — دوس استكمال", "Stopped — tap Resume") }
                 } else {
-                    self.mutate(it.id, now: true) { $0.state = .failed; $0.error = "اتقطع — دوس إعادة المحاولة" }
+                    self.mutate(it.id, now: true) { $0.state = .failed; $0.error = tr("اتقطع — دوس إعادة المحاولة", "Interrupted — tap Resume to try again") }
                 }
             }
         }
@@ -496,7 +496,7 @@ extension DownloadManager: URLSessionDownloadDelegate, AVAssetDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let id = downloadTask.taskDescription, let it = item(id) else { return }
         if let http = downloadTask.response as? HTTPURLResponse, http.statusCode >= 400 {
-            fail(id, "السيرفر رفض التحميل (HTTP \(http.statusCode)) — ممكن الرابط انتهى")
+            fail(id, tr("السيرفر رفض التحميل (HTTP \(http.statusCode)) — ممكن الرابط انتهى", "The server refused the download (HTTP \(http.statusCode)) — the link may have expired"))
             return
         }
         let suggested = downloadTask.response?.suggestedFilename
@@ -509,7 +509,7 @@ extension DownloadManager: URLSessionDownloadDelegate, AVAssetDownloadDelegate {
         do {
             try FileManager.default.moveItem(at: location, to: dest)
         } catch {
-            fail(id, "مقدرتش أحفظ الملف: \(error.localizedDescription)")
+            fail(id, tr("مقدرتش أحفظ الملف: \(error.localizedDescription)", "Couldn't save the file: \(error.localizedDescription)"))
             return
         }
         let attrs = try? FileManager.default.attributesOfItem(atPath: dest.path)
@@ -578,7 +578,7 @@ extension DownloadManager: URLSessionDownloadDelegate, AVAssetDownloadDelegate {
             mutate(id, now: true) { x in
                 x.state = .paused
                 x.speed = 0
-                x.error = "اتوقف لأن البرنامج اتقفل من قائمة البرامج — دوس استكمال"
+                x.error = tr("اتوقف لأن البرنامج اتقفل من قائمة البرامج — دوس استكمال", "Stopped because the app was closed from the app switcher — tap Resume")
             }
             return
         }

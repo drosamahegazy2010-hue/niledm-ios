@@ -69,7 +69,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.0-build${{ github.run_number }}"
+          TAG="v1.1-build${{ github.run_number }}"
           gh release create "$TAG" ios/NileDM.ipa --title "NileDM للآيفون ($TAG)" \
             --notes "نزّل NileDM.ipa وركّبه على الآيفون ببرنامج Sideloadly. (built on ${{ matrix.os }})" --latest \
           || gh release upload "$TAG" ios/NileDM.ipa --clobber

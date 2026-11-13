@@ -100,12 +100,12 @@ enum FileNames {
 
 enum Fmt {
     static func bytes(_ n: Int64) -> String {
-        if n < 0 { return "؟" }
+        if n < 0 { return tr("؟", "?") }
         return ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
     }
 
     static func speed(_ bps: Double) -> String {
-        bps > 1 ? ByteCountFormatter.string(fromByteCount: Int64(bps), countStyle: .file) + "/ث" : ""
+        bps > 1 ? ByteCountFormatter.string(fromByteCount: Int64(bps), countStyle: .file) + tr("/ث", "/s") : ""
     }
 
     static func eta(_ seconds: Double) -> String {
@@ -117,7 +117,7 @@ enum Fmt {
 
     static func date(_ d: Date) -> String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "ar")
+        f.locale = L10n.locale
         f.dateStyle = .medium
         f.timeStyle = .short
         return f.string(from: d)
@@ -186,8 +186,8 @@ enum Provision {
         guard let exp = expiry else { return }
         let when = exp.addingTimeInterval(-24 * 3600)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["expiry"])
-        Notifier.post(title: "NileDM محتاج تجديد بكرة",
-                      body: "وصّل الآيفون بالكمبيوتر وجدّد البرنامج من Sideloadly علشان يفضل شغال.",
+        Notifier.post(title: tr("NileDM محتاج تجديد بكرة", "NileDM needs renewing tomorrow"),
+                      body: tr("وصّل الآيفون بالكمبيوتر وجدّد البرنامج من Sideloadly علشان يفضل شغال.", "Connect the iPhone to your computer and renew the app with Sideloadly so it keeps working."),
                       id: "expiry", at: when)
     }
 }

@@ -38,7 +38,7 @@ struct BrowserTabView: View {
             .overlay(alignment: .bottomLeading) {
                 if !tab.visibleMedia.isEmpty {
                     Button { showMedia = true } label: {
-                        Label("تحميل الفيديو (\(tab.visibleMedia.count))", systemImage: "arrow.down.circle.fill")
+                        Label(tr("تحميل الفيديو (\(tab.visibleMedia.count))", "Download video (\(tab.visibleMedia.count))"), systemImage: "arrow.down.circle.fill")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
@@ -63,7 +63,7 @@ struct BrowserTabView: View {
             Image(systemName: tab.urlString.hasPrefix("https") ? "lock.fill" : "globe")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            TextField("اكتب رابط أو دوّر على جوجل", text: $address)
+            TextField(tr("اكتب رابط أو دوّر على جوجل", "Type a link or search Google"), text: $address)
                 .focused($editing)
                 .keyboardType(.webSearch)
                 .textInputAutocapitalization(.never)
@@ -74,7 +74,7 @@ struct BrowserTabView: View {
                     editing = false
                 }
             if editing {
-                Button("إلغاء") { editing = false }
+                Button(tr("إلغاء", "Cancel")) { editing = false }
                     .font(.subheadline)
             } else {
                 Button { tab.reloadOrStop() } label: {
@@ -138,15 +138,15 @@ struct MediaSheet: View {
                 if tab.visibleMedia.isEmpty {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("مفيش فيديو اتلقط في الصفحة دي لسه").font(.headline)
-                            Text("شغّل الفيديو كام ثانية وهيظهر هنا لوحده. فيديوهات يوتيوب ونتفليكس والبث المباشر مش مدعومة.")
+                            Text(tr("مفيش فيديو اتلقط في الصفحة دي لسه", "No video found on this page yet")).font(.headline)
+                            Text(tr("شغّل الفيديو كام ثانية وهيظهر هنا لوحده. فيديوهات يوتيوب ونتفليكس والبث المباشر مش مدعومة.", "Play the video for a few seconds and it will show up here. YouTube, Netflix and live streams aren't supported."))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 6)
                     }
                 } else {
-                    Section("الفيديوهات والملفات اللي اتلقطت") {
+                    Section(tr("الفيديوهات والملفات اللي اتلقطت", "Videos and files found")) {
                         ForEach(tab.visibleMedia) { m in
                             MediaRow(media: m) { variant in
                                 tab.download(media: m, quality: quality, variant: variant)
@@ -160,16 +160,16 @@ struct MediaSheet: View {
                         if let u = tab.webView.url { tab.download(url: u) }
                         dismiss()
                     } label: {
-                        Label("حمّل الصفحة المفتوحة كملف", systemImage: "arrow.down.doc")
+                        Label(tr("حمّل الصفحة المفتوحة كملف", "Download the open page as a file"), systemImage: "arrow.down.doc")
                     }
                 } footer: {
-                    Text("مفيد لو فاتح ملف PDF أو فيديو مباشر. وتقدر كمان تدوس ضغطة طويلة على أي رابط وتختار «تحميل بـ NileDM».")
+                    Text(tr("مفيد لو فاتح ملف PDF أو فيديو مباشر. وتقدر كمان تدوس ضغطة طويلة على أي رابط وتختار «تحميل بـ NileDM».", "Handy when a PDF or a direct video is open. You can also long-press any link and choose “Download with NileDM”."))
                 }
             }
-            .navigationTitle("تحميل من الصفحة")
+            .navigationTitle(tr("تحميل من الصفحة", "Download from page"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("قفل") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(tr("قفل", "Close")) { dismiss() } }
             }
         }
         .presentationDetents([.medium, .large])
@@ -197,11 +197,11 @@ struct MediaRow: View {
                     if media.size > 0 {
                         Text(Fmt.bytes(media.size)).font(.caption).foregroundStyle(.secondary)
                     } else if media.isMaster {
-                        Text("فيديو بث • \(media.variants.count) جودة").font(.caption).foregroundStyle(.secondary)
+                        Text(tr("فيديو بث • \(media.variants.count) جودة", "Stream • \(media.variants.count) qualities")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
-                Button("تحميل") { onDownload(nil) }
+                Button(tr("تحميل", "Download")) { onDownload(nil) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -240,7 +240,7 @@ struct TabsSheet: View {
                     }
                 }
             }
-            .navigationTitle("التبويبات")
+            .navigationTitle(tr("التبويبات", "Tabs"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -249,7 +249,7 @@ struct TabsSheet: View {
                         dismiss()
                     } label: { Image(systemName: "plus") }
                 }
-                ToolbarItem(placement: .cancellationAction) { Button("تم") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { dismiss() } }
             }
         }
     }
@@ -264,7 +264,7 @@ struct TabRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                Text(tab.title.isEmpty ? "صفحة جديدة" : tab.title)
+                Text(tab.title.isEmpty ? tr("صفحة جديدة", "New page") : tab.title)
                     .font(.subheadline.weight(isCurrent ? .bold : .regular))
                     .lineLimit(1)
                 Text(tab.displayHost).font(.caption).foregroundStyle(.secondary).lineLimit(1)

@@ -38,7 +38,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
         config.websiteDataStore = .default()
         let proxy = WeakScriptHandler()
         let ucc = WKUserContentController()
-        ucc.addUserScript(WKUserScript(source: Sniffer.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        Self.addScripts(to: ucc)
         ucc.add(proxy, name: Sniffer.handlerName)
         config.userContentController = ucc
         webView = WKWebView(frame: .zero, configuration: config)
@@ -56,6 +56,21 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
             webView.observe(\.canGoForward, options: [.new]) { [weak self] wv, _ in self?.canGoForward = wv.canGoForward },
         ]
         webView.load(URLRequest(url: url ?? Self.homeURL))
+    }
+
+    private static func addScripts(to ucc: WKUserContentController) {
+        ucc.addUserScript(WKUserScript(source: "window.__ndmButtonsOn = \(Sniffer.buttonsOn);",
+                                       injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        ucc.addUserScript(WKUserScript(source: Sniffer.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        ucc.addUserScript(WKUserScript(source: Sniffer.buttons, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+    }
+
+    /// Called when the "button on every video" setting changes.
+    func applyButtonSetting() {
+        let ucc = webView.configuration.userContentController
+        ucc.removeAllUserScripts()
+        Self.addScripts(to: ucc)
+        webView.evaluateJavaScript("window.__ndmButtonsOn = \(Sniffer.buttonsOn); window.__ndmRefresh && window.__ndmRefresh();")
     }
 
     deinit {
@@ -119,7 +134,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
 
     func download(url: URL, nameHint: String? = nil) {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
-            Toast.shared.show("الرابط ده مينفعش يتحمل")
+            Toast.shared.show(tr("الرابط ده مينفعش يتحمل", "This link can't be downloaded"))
             return
         }
         let page = webView.url
@@ -145,7 +160,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
                     let ext = m.url.pathExtension.isEmpty ? (m.kind == .audio ? "m4a" : "mp4") : m.url.pathExtension
                     DownloadManager.shared.addFile(url: m.url, pageURL: page, nameHint: base + "." + ext, headers: h)
                 case .dash:
-                    Toast.shared.show("النوع ده (DASH) مش مدعوم للأسف")
+                    Toast.shared.show(tr("النوع ده (DASH) مش مدعوم للأسف", "Sorry, this stream type (DASH) isn't supported"))
                 }
             }
         }
@@ -204,14 +219,62 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     }
 
     var visibleMedia: [MediaItem] { media.filter { !$0.hidden } }
+
+    // MARK: The button on each video
+
+    private var lastButtonDownload: (url: URL, at: Date)?
+
+    /// The download button drawn on a video was tapped.
+    fileprivate func videoButtonTapped(sources: [String], pageTitle: String) {
+        NSLog("NileDM: video button tapped %@", sources.joined(separator: " "))
+        let direct = sources.compactMap { URL(string: $0) }
+            .first { ["http", "https"].contains($0.scheme?.lowercased() ?? "") }
+        if let url = direct {
+            if !media.contains(where: { $0.url == url }) { found(urlString: url.absoluteString, tag: "video", pageTitle: pageTitle) }
+            if let m = media.first(where: { $0.url == url }) { quickDownload(m) }
+            return
+        }
+        // Most sites play through a blob: player — use the stream caught from the page's network requests.
+        let streams = visibleMedia.filter { $0.kind == .hls || $0.kind == .video }
+        switch streams.count {
+        case 0:
+            Toast.shared.show(tr("شغّل الفيديو ثانيتين وبعدين دوس علامة التحميل تاني",
+                                 "Play the video for a couple of seconds, then tap the download button again"))
+        case 1:
+            quickDownload(streams[0])
+        default:
+            NotificationCenter.default.post(name: .init("NDMShowMedia"), object: nil) // let the user pick
+        }
+    }
+
+    /// Starts right away with the default quality from Settings.
+    private func quickDownload(_ m: MediaItem) {
+        if let last = lastButtonDownload, last.url == m.url, Date().timeIntervalSince(last.at) < 4 { return }
+        lastButtonDownload = (m.url, Date())
+        let quality = UserDefaults.standard.string(forKey: "videoQuality") ?? "best"
+        if m.kind == .hls && m.variants.isEmpty && quality != "best" {
+            Task {
+                await self.inspect(m) // learn the qualities first
+                await MainActor.run {
+                    self.download(media: self.media.first(where: { $0.url == m.url }) ?? m, quality: quality)
+                }
+            }
+        } else {
+            download(media: m, quality: quality)
+        }
+    }
 }
 
 // MARK: - Script messages
 
 extension BrowserTab: WKScriptMessageHandler {
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == Sniffer.handlerName, let body = message.body as? [String: Any],
-              let url = body["url"] as? String else { return }
+        guard message.name == Sniffer.handlerName, let body = message.body as? [String: Any] else { return }
+        if body["action"] as? String == "videoButton" {
+            videoButtonTapped(sources: body["sources"] as? [String] ?? [], pageTitle: body["title"] as? String ?? "")
+            return
+        }
+        guard let url = body["url"] as? String else { return }
         let tag = body["tag"] as? String ?? ""
         let title = body["title"] as? String ?? ""
         NSLog("NileDM: page reported media %@ (%@)", url, tag)
@@ -284,7 +347,7 @@ extension BrowserTab: WKNavigationDelegate {
         let ns = error as NSError
         NSLog("NileDM: page failed %@ %ld", ns.domain, ns.code)
         if ns.code == NSURLErrorCancelled || ns.code == 102 { return } // 102 = frame load interrupted (download)
-        Toast.shared.show("مش قادر أفتح الصفحة: \(ns.localizedDescription)")
+        Toast.shared.show(tr("مش قادر أفتح الصفحة: \(ns.localizedDescription)", "Couldn't open the page: \(ns.localizedDescription)"))
     }
 
     // blob:/data: downloads that only WebKit can perform
@@ -312,7 +375,7 @@ extension BrowserTab: WKDownloadDelegate {
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         blobDownloads.removeValue(forKey: download)
-        Toast.shared.show("التحميل فشل: \(error.localizedDescription)")
+        Toast.shared.show(tr("التحميل فشل: \(error.localizedDescription)", "Download failed: \(error.localizedDescription)"))
     }
 }
 
@@ -335,18 +398,18 @@ extension BrowserTab: WKUIDelegate {
         }
         let config = UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             UIMenu(title: url.absoluteString, children: [
-                UIAction(title: "فتح", image: UIImage(systemName: "arrow.up.forward.square")) { _ in
+                UIAction(title: tr("فتح", "Open"), image: UIImage(systemName: "arrow.up.forward.square")) { _ in
                     self?.webView.load(URLRequest(url: url))
                 },
-                UIAction(title: "فتح في تبويب جديد", image: UIImage(systemName: "plus.square.on.square")) { _ in
+                UIAction(title: tr("فتح في تبويب جديد", "Open in new tab"), image: UIImage(systemName: "plus.square.on.square")) { _ in
                     self?.onOpenInNewTab?(url)
                 },
-                UIAction(title: "تحميل بـ NileDM", image: UIImage(systemName: "arrow.down.circle")) { _ in
+                UIAction(title: tr("تحميل بـ NileDM", "Download with NileDM"), image: UIImage(systemName: "arrow.down.circle")) { _ in
                     self?.download(url: url)
                 },
-                UIAction(title: "نسخ الرابط", image: UIImage(systemName: "doc.on.doc")) { _ in
+                UIAction(title: tr("نسخ الرابط", "Copy link"), image: UIImage(systemName: "doc.on.doc")) { _ in
                     UIPasteboard.general.url = url
-                    Toast.shared.show("الرابط اتنسخ")
+                    Toast.shared.show(tr("الرابط اتنسخ", "Link copied"))
                 },
             ])
         }
@@ -356,15 +419,15 @@ extension BrowserTab: WKUIDelegate {
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        a.addAction(UIAlertAction(title: "تمام", style: .default) { _ in completionHandler() })
+        a.addAction(UIAlertAction(title: tr("تمام", "OK"), style: .default) { _ in completionHandler() })
         if let top = UIApplication.shared.topViewController { top.present(a, animated: true) } else { completionHandler() }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        a.addAction(UIAlertAction(title: "إلغاء", style: .cancel) { _ in completionHandler(false) })
-        a.addAction(UIAlertAction(title: "تمام", style: .default) { _ in completionHandler(true) })
+        a.addAction(UIAlertAction(title: tr("إلغاء", "Cancel"), style: .cancel) { _ in completionHandler(false) })
+        a.addAction(UIAlertAction(title: tr("تمام", "OK"), style: .default) { _ in completionHandler(true) })
         if let top = UIApplication.shared.topViewController { top.present(a, animated: true) } else { completionHandler(false) }
     }
 }
@@ -389,6 +452,11 @@ final class TabsModel: ObservableObject {
         tabs.append(t)
         currentID = t.id
     }
+
+    /// Which screen is showing: 0 browser, 1 downloads, 2 settings (kept here so a language switch keeps it).
+    @Published var screen = 0
+
+    func applyButtonSetting() { tabs.forEach { $0.applyButtonSetting() } }
 
     func close(_ tab: BrowserTab) {
         tabs.removeAll { $0.id == tab.id }

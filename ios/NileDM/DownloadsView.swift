@@ -26,7 +26,7 @@ struct DownloadsScreen: View {
                             DownloadRow(item: item) { open(item) }
                                 .swipeActions(edge: .trailing) {
                                     Button(role: .destructive) { dm.delete(item.id) } label: {
-                                        Label("حذف", systemImage: "trash")
+                                        Label(tr("حذف", "Delete"), systemImage: "trash")
                                     }
                                 }
                                 .contextMenu { menu(for: item) }
@@ -35,7 +35,7 @@ struct DownloadsScreen: View {
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle("التحميلات")
+            .navigationTitle(tr("التحميلات", "Downloads"))
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -45,19 +45,19 @@ struct DownloadsScreen: View {
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     if dm.items.contains(where: { $0.state == .completed }) {
-                        Button("مسح المكتمل") { dm.clearFinished() }
+                        Button(tr("مسح المكتمل", "Clear finished")) { dm.clearFinished() }
                     }
                 }
             }
-            .alert("تحميل رابط", isPresented: $showAdd) {
+            .alert(tr("تحميل رابط", "Download a link"), isPresented: $showAdd) {
                 TextField("https://...", text: $newLink)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
-                Button("تحميل") { addLink() }
-                Button("إلغاء", role: .cancel) {}
+                Button(tr("تحميل", "Download")) { addLink() }
+                Button(tr("إلغاء", "Cancel"), role: .cancel) {}
             } message: {
-                Text("الصق رابط ملف أو فيديو (mp4 أو m3u8)")
+                Text(tr("الصق رابط ملف أو فيديو (mp4 أو m3u8)", "Paste a link to a file or video (mp4 or m3u8)"))
             }
             .fullScreenCover(item: $playing) { f in PlayerScreen(url: f.url) }
             .sheet(item: $previewing) { f in QuickLookView(url: f.url).ignoresSafeArea() }
@@ -69,8 +69,8 @@ struct DownloadsScreen: View {
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 60))
                 .foregroundStyle(Color.accentColor)
-            Text("مفيش تحميلات لسه").font(.title3.weight(.bold))
-            Text("افتح أي موقع من «المتصفح»، شغّل الفيديو ودوس «تحميل الفيديو»، أو دوس ضغطة طويلة على أي رابط واختار «تحميل بـ NileDM».\nالتحميل بيكمل لوحده حتى لو خرجت من البرنامج.")
+            Text(tr("مفيش تحميلات لسه", "No downloads yet")).font(.title3.weight(.bold))
+            Text(tr("افتح أي موقع من «المتصفح»، شغّل الفيديو ودوس علامة التحميل اللي عليه، أو دوس ضغطة طويلة على أي رابط واختار «تحميل بـ NileDM».\nالتحميل بيكمل لوحده حتى لو خرجت من البرنامج.", "Open any site in “Browser”, play the video and tap the download button on it, or long-press any link and choose “Download with NileDM”.\nDownloads keep going even if you leave the app."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -82,7 +82,7 @@ struct DownloadsScreen: View {
     private func addLink() {
         let text = newLink.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: text), let s = url.scheme?.lowercased(), s == "http" || s == "https" else {
-            Toast.shared.show("الرابط لازم يبدأ بـ http أو https")
+            Toast.shared.show(tr("الرابط لازم يبدأ بـ http أو https", "The link must start with http or https"))
             return
         }
         var headers: [String: String] = [:]
@@ -93,7 +93,7 @@ struct DownloadsScreen: View {
     private func open(_ item: DownloadItem) {
         guard item.state == .completed, let url = item.localURL else { return }
         guard FileManager.default.fileExists(atPath: url.path) else {
-            Toast.shared.show("الملف مش موجود (ممكن اتمسح من برنامج الملفات)")
+            Toast.shared.show(tr("الملف مش موجود (ممكن اتمسح من برنامج الملفات)", "File not found (it may have been deleted in the Files app)"))
             return
         }
         if item.isVideo || item.isAudio {
@@ -106,31 +106,31 @@ struct DownloadsScreen: View {
     @ViewBuilder
     private func menu(for item: DownloadItem) -> some View {
         if item.state == .completed, let url = item.localURL {
-            Button { open(item) } label: { Label("فتح", systemImage: "play.circle") }
+            Button { open(item) } label: { Label(tr("فتح", "Open"), systemImage: "play.circle") }
             if item.fileName != nil {
-                ShareLink(item: url) { Label("مشاركة / حفظ في الملفات", systemImage: "square.and.arrow.up") }
+                ShareLink(item: url) { Label(tr("مشاركة / حفظ في الملفات", "Share / Save to Files"), systemImage: "square.and.arrow.up") }
                 if item.isVideo || FileNames.imageExts.contains(url.pathExtension.lowercased()) {
-                    Button { saveToPhotos(url) } label: { Label("حفظ في الصور", systemImage: "photo.on.rectangle") }
+                    Button { saveToPhotos(url) } label: { Label(tr("حفظ في الصور", "Save to Photos"), systemImage: "photo.on.rectangle") }
                 }
             }
         }
         if item.state == .downloading {
-            Button { dm.pause(item.id) } label: { Label("إيقاف مؤقت", systemImage: "pause.circle") }
+            Button { dm.pause(item.id) } label: { Label(tr("إيقاف مؤقت", "Pause"), systemImage: "pause.circle") }
         }
         if item.state == .paused || item.state == .failed {
-            Button { dm.resume(item.id) } label: { Label("استكمال", systemImage: "arrow.clockwise.circle") }
+            Button { dm.resume(item.id) } label: { Label(tr("استكمال", "Resume"), systemImage: "arrow.clockwise.circle") }
         }
         Button {
             UIPasteboard.general.string = item.url
-            Toast.shared.show("الرابط اتنسخ")
-        } label: { Label("نسخ الرابط", systemImage: "doc.on.doc") }
-        Button(role: .destructive) { dm.delete(item.id) } label: { Label("حذف", systemImage: "trash") }
+            Toast.shared.show(tr("الرابط اتنسخ", "Link copied"))
+        } label: { Label(tr("نسخ الرابط", "Copy link"), systemImage: "doc.on.doc") }
+        Button(role: .destructive) { dm.delete(item.id) } label: { Label(tr("حذف", "Delete"), systemImage: "trash") }
     }
 
     private func saveToPhotos(_ url: URL) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else {
-                Toast.shared.show("اسمح لـ NileDM بالحفظ في الصور من الإعدادات")
+                Toast.shared.show(tr("اسمح لـ NileDM بالحفظ في الصور من الإعدادات", "Allow NileDM to add to Photos in the Settings app"))
                 return
             }
             let isImage = FileNames.imageExts.contains(url.pathExtension.lowercased())
@@ -141,7 +141,7 @@ struct DownloadsScreen: View {
                     _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
                 }
             }) { ok, error in
-                Toast.shared.show(ok ? "اتحفظ في الصور ✔" : "الصور مش بتقبل الملف ده: \(error?.localizedDescription ?? "")")
+                Toast.shared.show(ok ? tr("اتحفظ في الصور ✔", "Saved to Photos ✔") : tr("الصور مش بتقبل الملف ده: \(error?.localizedDescription ?? "")", "Photos can't take this file: \(error?.localizedDescription ?? "")"))
             }
         }
     }
@@ -207,21 +207,21 @@ struct DownloadRow: View {
 
     private var status: String {
         let pct = "\(Int((item.progress * 100).rounded()))%"
-        let sizes = item.total > 0 ? "\(Fmt.bytes(item.received)) من \(Fmt.bytes(item.total))" : Fmt.bytes(item.received)
+        let sizes = item.total > 0 ? tr("\(Fmt.bytes(item.received)) من \(Fmt.bytes(item.total))", "\(Fmt.bytes(item.received)) of \(Fmt.bytes(item.total))") : Fmt.bytes(item.received)
         switch item.state {
         case .downloading:
             var parts = [pct, sizes]
             let sp = Fmt.speed(item.speed)
             if !sp.isEmpty { parts.append(sp) }
             let eta = Fmt.eta(item.eta)
-            if !eta.isEmpty { parts.append("باقي \(eta)") }
+            if !eta.isEmpty { parts.append(tr("باقي \(eta)", "\(eta) left")) }
             return parts.joined(separator: " • ")
         case .processing:
-            return "بيجهّز الفيديو MP4..."
+            return tr("بيجهّز الفيديو MP4...", "Preparing the MP4 video...")
         case .paused:
-            return ["متوقف • \(pct) • \(sizes)", item.error].compactMap { $0 }.joined(separator: "\n")
+            return [tr("متوقف • \(pct) • \(sizes)", "Paused • \(pct) • \(sizes)"), item.error].compactMap { $0 }.joined(separator: "\n")
         case .failed:
-            return item.error ?? "فشل"
+            return item.error ?? tr("فشل", "Failed")
         case .completed:
             var parts: [String] = []
             if item.total > 0 { parts.append(Fmt.bytes(item.total)) }

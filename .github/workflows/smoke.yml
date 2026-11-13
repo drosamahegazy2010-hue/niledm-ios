@@ -11,7 +11,7 @@ permissions:
 jobs:
   smoke:
     runs-on: macos-15-intel   # Apple-silicon runners are short on capacity today
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Xcode
@@ -45,69 +45,58 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           xcrun simctl privacy "$UDID" grant photos-add eg.niledm.browser || true
           mkdir -p shots www
-          # test page with two videos (mp4 + HLS stream), and a file that downloads slowly (~70 s)
+          # test page with two videos: a direct mp4 and an HLS stream
           cat > www/video.html <<'HTML'
           <!doctype html><html><head><meta name="viewport" content="width=device-width"><title>NileDM video test</title></head>
-          <body style="font-family:-apple-system"><h2>Video test</h2>
-          <video src="https://www.w3schools.com/html/mov_bbb.mp4" controls playsinline width="300"></video>
-          <video src="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8" controls playsinline width="300"></video>
+          <body style="font-family:-apple-system;margin:12px"><h2>Video test</h2>
+          <video src="https://www.w3schools.com/html/mov_bbb.mp4" controls playsinline style="width:100%"></video>
+          <p>Second video (HLS):</p>
+          <video src="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8" controls playsinline style="width:100%"></video>
           </body></html>
           HTML
-          cat > slow.py <<'PY'
-          import http.server, time, sys
-          SIZE = 24 * 1024 * 1024
-          class H(http.server.SimpleHTTPRequestHandler):
-              def __init__(self, *a, **k): super().__init__(*a, directory="www", **k)
-              def do_GET(self):
-                  if not self.path.startswith("/slow.bin"): return super().do_GET()
-                  self.send_response(200)
-                  self.send_header("Content-Type", "application/octet-stream")
-                  self.send_header("Content-Length", str(SIZE))
-                  self.end_headers()
-                  chunk = b"N" * (64 * 1024); sent = 0; start = time.time()
-                  while sent < SIZE:
-                      self.wfile.write(chunk); sent += len(chunk)
-                      if sent % (2 * 1024 * 1024) == 0:
-                          print(f"slow.bin {sent >> 20} MB at +{time.time() - start:.0f}s", flush=True)
-                      time.sleep(0.18)
-          http.server.ThreadingHTTPServer(("127.0.0.1", 8765), H).serve_forever()
-          PY
-          echo "server start $(date +%T)" > shots/events.txt
-          python3 slow.py > shots/server.txt 2>&1 &
-          codesign -dv build/Build/Products/Debug-iphonesimulator/NileDM.app 2>&1 | tee shots/codesign.txt || true
+          (cd www && python3 -m http.server 8765 --bind 127.0.0.1 > ../shots/server.txt 2>&1 &)
           sleep 2
           PAGE="http://127.0.0.1:8765/video.html"
-          SLOW="http://127.0.0.1:8765/slow.bin"
-          SMALL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+          APPID=eg.niledm.browser
 
-          xcrun simctl launch "$UDID" eg.niledm.browser -NDMOpen "$PAGE" -NDMShowMedia
+          # 1) Arabic: the page with a download button on each video
+          xcrun simctl launch "$UDID" $APPID -appLanguage ar -NDMOpen "$PAGE"
+          sleep 75
+          xcrun simctl io "$UDID" screenshot shots/1-ar-video-buttons.png
+          xcrun simctl terminate "$UDID" $APPID
+
+          # 2) English: tap the button on the first video (mp4), then look at the downloads list and settings
+          xcrun simctl launch "$UDID" $APPID -appLanguage en -NDMOpen "$PAGE" -NDMTapVideo
           sleep 60
-          xcrun simctl io "$UDID" screenshot shots/1-video-page.png
-          sleep 60
-          xcrun simctl io "$UDID" screenshot shots/2-video-list.png
-          xcrun simctl terminate "$UDID" eg.niledm.browser
+          xcrun simctl io "$UDID" screenshot shots/2-en-video-buttons.png
+          sleep 15
+          xcrun simctl terminate "$UDID" $APPID
+          xcrun simctl launch "$UDID" $APPID -appLanguage en -NDMScreen 1
+          sleep 15
+          xcrun simctl io "$UDID" screenshot shots/3-en-downloads.png
+          xcrun simctl terminate "$UDID" $APPID
+          xcrun simctl launch "$UDID" $APPID -appLanguage en -NDMScreen 2
+          sleep 15
+          xcrun simctl io "$UDID" screenshot shots/4-en-settings.png
+          xcrun simctl terminate "$UDID" $APPID
+          xcrun simctl launch "$UDID" $APPID -appLanguage ar -NDMScreen 2
+          sleep 15
+          xcrun simctl io "$UDID" screenshot shots/5-ar-settings.png
+          xcrun simctl terminate "$UDID" $APPID
+
+          # 3) HLS stream download -> MP4
           HLS="https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8"
+          xcrun simctl launch "$UDID" $APPID -appLanguage ar -NDMSelfTest "$HLS"
+          sleep 150
+          xcrun simctl io "$UDID" screenshot shots/6-ar-hls.png
 
-          xcrun simctl launch "$UDID" eg.niledm.browser -NDMSelfTest "$SMALL" "$SLOW" "$HLS"
-          sleep 40
-          xcrun simctl io "$UDID" screenshot shots/3-downloading.png
-          echo "app sent to background at $(date +%T)" >> shots/events.txt
-          xcrun simctl launch "$UDID" com.apple.Preferences
-          sleep 100
-          echo "app opened again at $(date +%T)" >> shots/events.txt
-          xcrun simctl launch "$UDID" eg.niledm.browser -NDMShowDownloads
-          sleep 30
-          xcrun simctl io "$UDID" screenshot shots/4-after-background.png
-          DATA=$(xcrun simctl get_app_container "$UDID" eg.niledm.browser data)
-          sleep 60   # give the HLS -> MP4 conversion time
-          xcrun simctl io "$UDID" screenshot shots/5-later.png
+          DATA=$(xcrun simctl get_app_container "$UDID" $APPID data)
           ls -la "$DATA/Documents/Downloads" > shots/files.txt 2>&1 || true
           cp "$DATA/Library/Application Support/NileDM/downloads.json" shots/downloads.json || true
-          xcrun simctl spawn "$UDID" log show --last 10m --style compact \
+          xcrun simctl spawn "$UDID" log show --last 15m --style compact \
             --predicate 'process == "NileDM" OR process == "nsurlsessiond"' 2>/dev/null > all.log || true
           grep -E "NileDM:" all.log | cut -c1-600 > shots/log.txt || true
-          grep -iE "slow.bin|127.0.0.1:8765" all.log | tail -60 >> shots/log.txt || true
-          cat shots/events.txt shots/server.txt shots/files.txt shots/log.txt
+          cat shots/files.txt shots/log.txt
       - name: Publish screenshots
         if: always()
         working-directory: ios

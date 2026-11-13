@@ -8,14 +8,18 @@ struct NileDMApp: App {
     @StateObject private var tabs = TabsModel()
     @StateObject private var downloads = DownloadManager.shared
     @StateObject private var toast = Toast.shared
+    @AppStorage(L10n.key) private var lang = "ar"
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .id(lang) // rebuild every screen in the new language
+                .onChange(of: lang) { L10n.apply($0) }
                 .environmentObject(tabs)
                 .environmentObject(downloads)
                 .environmentObject(toast)
-                .environment(\.layoutDirection, .rightToLeft)
+                .environment(\.layoutDirection, lang == "en" ? .leftToRight : .rightToLeft)
+                .environment(\.locale, Locale(identifier: lang == "en" ? "en" : "ar"))
                 .tint(Color("AccentColor"))
         }
     }
