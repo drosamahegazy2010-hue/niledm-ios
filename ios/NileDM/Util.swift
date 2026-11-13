@@ -99,13 +99,22 @@ enum FileNames {
 // MARK: - Formatting
 
 enum Fmt {
+    /// Sizes in the app's language (ByteCountFormatter always follows the phone's language).
     static func bytes(_ n: Int64) -> String {
         if n < 0 { return tr("؟", "?") }
-        return ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
+        let units = L10n.isEnglish ? ["bytes", "KB", "MB", "GB", "TB"] : ["بايت", "ك.ب", "م.ب", "ج.ب", "ت.ب"]
+        var v = Double(n), i = 0
+        while v >= 1000 && i < units.count - 1 { v /= 1000; i += 1 }
+        let f = NumberFormatter()
+        f.locale = L10n.locale
+        f.numberStyle = .decimal
+        f.minimumFractionDigits = 0
+        f.maximumFractionDigits = (i == 0 || v >= 100) ? 0 : 1
+        return (f.string(from: NSNumber(value: v)) ?? String(Int(v))) + " " + units[i]
     }
 
     static func speed(_ bps: Double) -> String {
-        bps > 1 ? ByteCountFormatter.string(fromByteCount: Int64(bps), countStyle: .file) + tr("/ث", "/s") : ""
+        bps > 1 ? bytes(Int64(bps)) + tr("/ث", "/s") : ""
     }
 
     static func eta(_ seconds: Double) -> String {
